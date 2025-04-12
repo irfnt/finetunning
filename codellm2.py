@@ -77,6 +77,7 @@ trainer = Trainer(
     args=training_args,
     train_dataset=encoded_train_data,
     eval_dataset=encoded_eval_data
+    data_collator=DataCollatorForSeq2Seq(tokenizer, pad_to_multiple_of=8, return_tensor="pt", padding=True)
 )
 
 # Step 6: Fine-tuning

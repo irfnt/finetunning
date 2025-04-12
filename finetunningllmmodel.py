@@ -11,19 +11,15 @@ from unsloth import is_bfloat16_supported
 max_seq_length = 2048
 dtype = None
 load_in_4bit = True 
-alpaca_prompt = """Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.
+alpaca_prompt = """Write a verilog code for the given instruction:.
 
-### Instruction:
+### description:
 {}
-
-### Input:
-{}
-
-### Response:
+### code:
 {}"""
 
-instruction = "Create a function to calculate the sum of a sequence of integers."
-input = "[1, 2, 3, 4, 5]"
+instruction = "write a verilog code for 4bit adder."
+code = "[1, 2, 3, 4, 5]"
 huggingface_model_name = "mervinpraison/Llama-3.1-8B-bnb-4bit-python"
 
 # 2. Before Training

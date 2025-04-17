@@ -1,42 +1,110 @@
-# File: output_harmful_skew.tcl
-# Purpose: Output only harmful skew values in Synopsys IC Compiler
+# File: calc_harmful_skew.tcl
+# Purpose: Calculate harmful skew in Synopsys IC Compiler for paths with timing violations
+# Assumes design is loaded, constraints applied, and CTS completed
 
-puts "Extracting harmful skew values..."
+proc calculate_harmful_skew {} {
+    # Validate design setup
+    if {[sizeof_collection [get_clocks *]] == 0} {
+        puts "Error: No clocks defined. Check SDC file."
+        return
+    }
 
-set clock_name "clk"  ;# Replace with your clock name
-if {![get_clocks $clock_name -quiet]} {
-    puts "Error: Clock $clock_name not found."
-    return
+    # Open report file
+    set report_file "harmful_skew_report.txt"
+    set fh [open $report_file w]
+    puts $fh "Harmful Skew Analysis Report - [clock format [clock seconds]]"
+    puts $fh "----------------------------"
+    puts $fh "Path | Skew (ns) | Slack (ns) | Violation Type | Harmful Skew (ns)"
+
+    # Output header to console
+    puts "Harmful Skew Analysis Report"
+    puts "----------------------------"
+    puts "Path | Skew (ns) | Slack (ns) | Violation Type | Harmful Skew (ns)"
+
+    # Initialize counters
+    set harmful_skew_count 0
+
+    # Step 1: Get setup paths with negative slack (max delay)
+    set setup_paths [get_timing_paths -slack_lesser_than 0 -max_paths 100 -delay_type max]
+    set hold_paths [get_timing_paths -slack_lesser_than 0 -max_paths 100 -delay_type min]
+
+    # Step 2: Process setup paths
+    foreach_in_collection path $setup_paths {
+        if {![process_path $path $fh "Setup" harmful_skew_count]} {
+            continue
+        }
+        incr harmful_skew_count
+    }
+
+    # Step 3: Process hold paths
+    foreach_in_collection path $hold_paths {
+        if {![process_path $path $fh "Hold" harmful_skew_count]} {
+            continue
+        }
+        incr harmful_skew_count
+    }
+
+    # Step 4: Summary
+    if {$harmful_skew_count == 0} {
+        puts "No timing violations found. All paths have positive slack."
+        puts $fh "No timing violations found. All paths have positive slack."
+    } else {
+        puts "----------------------------"
+        puts "Total Paths with Harmful Skew: $harmful_skew_count"
+        puts $fh "----------------------------"
+        puts $fh "Total Paths with Harmful Skew: $harmful_skew_count"
+    }
+
+    close $fh
+    puts "Report saved to $report_file"
 }
 
-set paths [get_timing_paths -max_paths 1000 -slack_lesser_than 0.0]
-set harmful_skew_count 0
+# Helper procedure to process a single timing path
+proc process_path {path fh violation_type harmful_skew_count} {
+    upvar $harmful_skew_count count
 
-puts "Harmful Skew Values:"
-puts "--------------------"
-foreach_in_collection path $paths {
-    set launch_point [get_attribute $path startpoint]
-    set capture_point [get_attribute $path endpoint]
-    set launch_clock_pin [get_pins -of_objects $launch_point -filter "is_clock_pin==true"]
-    set capture_clock_pin [get_pins -of_objects $capture_point -filter "is_clock_pin==true"]
+    # Get startpoint (launch) and endpoint (capture)
+    set startpoint [get_attribute $path startpoint]
+    set endpoint [get_attribute $path endpoint]
+
+    # Get clock pins
+    set launch_clock_pin [get_pins -of_objects $startpoint -filter "is_clock_pin==true"]
+    set capture_clock_pin [get_pins -of_objects $endpoint -filter "is_clock_pin==true"]
 
     if {$launch_clock_pin == "" || $capture_clock_pin == ""} {
-        continue
+        puts $fh "Warning: No clock pins for path from [get_attribute $startpoint name] to [get_attribute $endpoint name]"
+        return 0
     }
 
+    # Get clock arrival times
     set launch_arrival [get_attribute [get_timing_arcs -to $launch_clock_pin] arrival]
     set capture_arrival [get_attribute [get_timing_arcs -to $capture_clock_pin] arrival]
+
+    if {$launch_arrival == "" || $capture_arrival == ""} {
+        puts $fh "Warning: Could not retrieve clock arrivals for path from [get_attribute $startpoint name] to [get_attribute $endpoint name]"
+        return 0
+    }
+
+    # Calculate skew
     set skew [expr $capture_arrival - $launch_arrival]
 
-    set setup_slack [get_attribute $path slack]
-    set hold_path [get_timing_paths -from $launch_point -to $capture_point -delay_type min]
-    set hold_slack [get_attribute $hold_path slack]
+    # Get slack
+    set slack [get_attribute $path slack]
 
-    if {$setup_slack < 0 || $hold_slack < 0} {
-        incr harmful_skew_count
-        puts "Path $harmful_skew_count: $skew ns ([expr {$setup_slack < 0 ? "Setup" : "Hold"}] Violation)"
-    }
+    # Harmful skew is the skew value itself for paths with negative slack
+    set harmful_skew $skew
+
+    # Format path name
+    set path_name "[get_attribute $startpoint name] -> [get_attribute $endpoint name]"
+
+    # Output results
+    puts [format "%s | %.3f | %.3f | %s | %.3f" \
+          $path_name $skew $slack $violation_type $harmful_skew]
+    puts $fh [format "%s | %.3f | %.3f | %s | %.3f" \
+              $path_name $skew $slack $violation_type $harmful_skew]
+
+    return 1
 }
 
-puts "--------------------"
-puts "Total Harmful Skew Paths: $harmful_skew_count"
+# Execute the procedure
+calculate_harmful_skew

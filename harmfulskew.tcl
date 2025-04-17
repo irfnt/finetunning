@@ -22,18 +22,28 @@ proc calculate_harmful_skew {} {
         set startpoint [get_attribute $path startpoint]
         set endpoint [get_attribute $path endpoint]
 
-        # Get clock arrival times
-        set launch_clock_pin [get_attribute $startpoint clock_pin]
-        set capture_clock_pin [get_attribute $endpoint clock_pin]
+        # Get the clocks associated with startpoint and endpoint
+        set launch_clock [get_attribute $startpoint clock]
+        set capture_clock [get_attribute $endpoint clock]
 
-        # Extract clock arrival times (in ns)
+        # Initialize clock arrival times
         set launch_arrival 0
         set capture_arrival 0
-        if {$launch_clock_pin != "" && $capture_clock_pin != ""} {
-            set launch_arrival [get_attribute [get_timing_arcs -to $startpoint] arrival]
-            set capture_arrival [get_attribute [get_timing_arcs -to $endpoint] arrival]
-        } else {
-            puts "Warning: Could not retrieve clock pins for path from $startpoint to $endpoint"
+
+        # Check if clocks are defined for startpoint and endpoint
+        if {$launch_clock == "" || $capture_clock == ""} {
+            puts "Warning: Could not retrieve clock for path from [get_attribute $startpoint name] to [get_attribute $endpoint name]"
+            continue
+        }
+
+        # Get clock network latency (arrival time) to the startpoint and endpoint
+        # Use get_clock_network_latency to get the clock arrival times
+        set launch_arrival [get_clock_network_latency -clock $launch_clock -to $startpoint]
+        set capture_arrival [get_clock_network_latency -clock $capture_clock -to $endpoint]
+
+        # If clock latency cannot be retrieved, skip the path
+        if {$launch_arrival == "" || $capture_arrival == ""} {
+            puts "Warning: Could not retrieve clock latency for path from [get_attribute $startpoint name] to [get_attribute $endpoint name]"
             continue
         }
 
@@ -49,9 +59,16 @@ proc calculate_harmful_skew {} {
         if {$path_type == "max"} {
             # Setup violation
             # Harmful skew is how much negative skew exceeds allowable margin
-            set clock_period [get_attribute [get_attribute $path clock] period]
-            set data_path_delay [get_attribute $path data_path_delay]
+            set clock_period [get_attribute $launch_clock period]
+            set data_path_delay [get_attribute $path data_delay]
             set setup_time [get_attribute $endpoint setup]
+
+            # Check if attributes are retrieved successfully
+            if {$clock_period == "" || $data_path_delay == "" || $setup_time == ""} {
+                puts "Warning: Could not retrieve timing attributes for path from [get_attribute $startpoint name] to [get_attribute $endpoint name]"
+                continue
+            }
+
             set max_allowable_skew [expr $clock_period - $data_path_delay - $setup_time]
             if {$skew < $max_allowable_skew} {
                 set harmful_skew [expr $max_allowable_skew - $skew]
@@ -59,12 +76,22 @@ proc calculate_harmful_skew {} {
         } elseif {$path_type == "min"} {
             # Hold violation
             # Harmful skew is how much positive skew exceeds allowable margin
-            set min_data_path_delay [get_attribute $path data_path_delay]
+            set min_data_path_delay [get_attribute $path data_delay]
             set hold_time [get_attribute $endpoint hold]
+
+            # Check if attributes are retrieved successfully
+            if {$min_data_path_delay == "" || $hold_time == ""} {
+                puts "Warning: Could not retrieve timing attributes for path from [get_attribute $startpoint name] to [get_attribute $endpoint name]"
+                continue
+            }
+
             set max_allowable_skew [expr $min_data_path_delay - $hold_time]
             if {$skew > $max_allowable_skew} {
                 set harmful_skew [expr $skew - $max_allowable_skew]
             }
+        } else {
+            puts "Warning: Unknown path type for path from [get_attribute $startpoint name] to [get_attribute $endpoint name]"
+            continue
         }
 
         # Report results

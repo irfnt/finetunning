@@ -26,8 +26,8 @@ proc calculate_harmful_skew {} {
     set hold_slacks [list]
     set harmful_skew_values [list]
     set total_harmful_skew 0.0
-    set max_harmful_skew 0.0
-    set min_harmful_skew 0.0
+    set max_harmful_skew -inf
+    set min_harmful_skew +inf
     set harmful_skew_count 0
 
     # Get timing paths with violations
@@ -204,10 +204,10 @@ proc process_path {path fh violation_type slack_list_var harmful_skew_values_var
         set total_harmful_skew [expr {$total_harmful_skew + $harmful_skew}]
         
         # Update max/min harmful skew
-        if {$harmful_skew > $max_harmful || $num_harmful == 0} {
+        if {$harmful_skew > $max_harmful} {
             set max_harmful $harmful_skew
         }
-        if {$harmful_skew < $min_harmful || $num_harmful == 0} {
+        if {$harmful_skew < $min_harmful} {
             set min_harmful $harmful_skew
         }
     }

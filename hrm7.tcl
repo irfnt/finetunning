@@ -29,6 +29,7 @@ proc calculate_harmful_skew {} {
     set max_harmful_skew -inf
     set min_harmful_skew +inf
     set harmful_skew_count 0
+    set harmful_paths_details [list]
 
     # Get timing paths with violations
     set setup_paths [get_timing_paths -slack_lesser_than 0 -max_paths 1000 -delay_type max]
@@ -37,14 +38,14 @@ proc calculate_harmful_skew {} {
     # Process setup paths
     if {[sizeof_collection $setup_paths] > 0} {
         foreach_in_collection path $setup_paths {
-            incr harmful_skew_count [process_path $path $fh "Setup" setup_slacks harmful_skew_values total_harmful_skew max_harmful_skew min_harmful_skew]
+            incr harmful_skew_count [process_path $path $fh "Setup" setup_slacks harmful_skew_values total_harmful_skew max_harmful_skew min_harmful_skew harmful_paths_details]
         }
     }
 
     # Process hold paths
     if {[sizeof_collection $hold_paths] > 0} {
         foreach_in_collection path $hold_paths {
-            incr harmful_skew_count [process_path $path $fh "Hold" hold_slacks harmful_skew_values total_harmful_skew max_harmful_skew min_harmful_skew]
+            incr harmful_skew_count [process_path $path $fh "Hold" hold_slacks harmful_skew_values total_harmful_skew max_harmful_skew min_harmful_skew harmful_paths_details]
         }
     }
 
@@ -126,17 +127,38 @@ proc calculate_harmful_skew {} {
     puts $fh "Median Harmful Skew:   [format "%10.3f" $median_harmful] ns"
     puts $fh "Paths with Harmful Skew: $harmful_skew_count"
 
+    # Detailed Harmful Paths Report
+    if {[llength $harmful_paths_details] > 0} {
+        puts "\n----------------------------------------"
+        puts "Detailed Paths with Harmful Skew:"
+        puts "----------------------------------------"
+        puts [format "%-80s | %8s | %8s | %-6s | %8s" \
+              "Path" "Skew" "Slack" "Type" "Harmful"]
+        
+        puts $fh "\n----------------------------------------"
+        puts $fh "Detailed Paths with Harmful Skew:"
+        puts $fh "----------------------------------------"
+        puts $fh [format "%-80s | %8s | %8s | %-6s | %8s" \
+                  "Path" "Skew" "Slack" "Type" "Harmful"]
+
+        foreach path_entry $harmful_paths_details {
+            puts $path_entry
+            puts $fh $path_entry
+        }
+    }
+
     close $fh
     puts "\nReport saved to $report_file"
     return 0
 }
 
-proc process_path {path fh violation_type slack_list_var harmful_skew_values_var total_harmful_skew_var max_harmful_var min_harmful_var} {
+proc process_path {path fh violation_type slack_list_var harmful_skew_values_var total_harmful_skew_var max_harmful_var min_harmful_var harmful_paths_var} {
     upvar $slack_list_var slack_list
     upvar $harmful_skew_values_var harmful_skew_values
     upvar $total_harmful_skew_var total_harmful_skew
     upvar $max_harmful_var max_harmful
     upvar $min_harmful_var min_harmful
+    upvar $harmful_paths_var harmful_paths
 
     # Initialize defaults
     set skew "N/A"
@@ -210,12 +232,15 @@ proc process_path {path fh violation_type slack_list_var harmful_skew_values_var
         if {$harmful_skew < $min_harmful} {
             set min_harmful $harmful_skew
         }
+
+        # Add to harmful paths list
+        set path_name "[get_attribute $startpoint full_name] -> [get_attribute $endpoint full_name]"
+        set formatted_line [format "%-80s | %8.3f | %8.3f | %-6s | %8.3f" \
+                            $path_name $skew $slack $violation_type $harmful_skew]
+        lappend harmful_paths $formatted_line
     }
 
-    # Format path name
-    set path_name "[get_attribute $startpoint full_name] -> [get_attribute $endpoint full_name]"
-
-    # Output results
+    # Output results immediately
     puts [format "%-80s | %8.3f | %8.3f | %-6s | %8.3f" \
           $path_name $skew $slack $violation_type $harmful_skew]
     puts $fh [format "%-80s | %8.3f | %8.3f | %-6s | %8.3f" \
